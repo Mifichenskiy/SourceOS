@@ -9,7 +9,7 @@
 
 local running = false
 local current_user = ""
-local logged_in_user = "" -- Реально залогиненный юзер; НЕ меняется при sudo (в отличие от current_user)
+local logged_in_user = ""
 local hostname = "SourcePC"
 local plugin_dir = "/plugins_source/"
 local db_path = "/users.json"
@@ -21,7 +21,6 @@ local users = {}
 local shop = {}
 local sales_log = {}
 
--- Функции для работы с JSON базой данных
 local function load_db()
     if fs.exists(db_path) then
         local file = fs.open(db_path, "r")
@@ -29,7 +28,6 @@ local function load_db()
         file.close()
         users = textutils.unserializeJSON(content) or {}
     else
-        -- Дефолтная база, если файла нет
         users = {
             ["root"] = { pass = "dev//00**jj", wheel = true },
             ["toha"] = { pass = "t2x2_stream", wheel = true }
@@ -46,7 +44,6 @@ local function save_db()
     file.close()
 end
 
--- Функции для работы с базой товаров магазина
 local function load_shop_db()
     if fs.exists(shop_db_path) then
         local file = fs.open(shop_db_path, "r")
@@ -54,7 +51,7 @@ local function load_shop_db()
         file.close()
         shop = textutils.unserializeJSON(content) or {}
     else
-        shop = {} -- Пустой каталог по умолчанию, добавляется через additem
+        shop = {}
         local file = fs.open(shop_db_path, "w")
         file.write(textutils.serializeJSON(shop))
         file.close()
@@ -67,7 +64,6 @@ local function save_shop_db()
     file.close()
 end
 
--- Функции для работы с логом продаж
 local function load_sales_log()
     if fs.exists(sales_log_path) then
         local file = fs.open(sales_log_path, "r")
@@ -93,7 +89,6 @@ local function linux_clear()
     term.setCursorPos(1, 1)
 end
 
--- Инициализация системы
 load_db()
 load_shop_db()
 load_sales_log()
@@ -104,7 +99,6 @@ sleep(0.2)
 print("[SourceOS] Synced readable database via " .. db_path .. "... OK")
 sleep(0.2)
 
--- Бесконечный цикл авторизации
 while not running do
     print("\n---------------------------------------------------")
     if term.isColor() then term.setTextColor(colors.cyan) end
@@ -137,8 +131,6 @@ while not running do
     end
 end
 
--- Обработчик одной команды. Используется и главным циклом, и sudo (вместо shell.run,
--- который не знает о внутренних командах SourceOS и ищет их как файлы-программы).
 local function execute_command(input)
     local args = {}
     for word in input:gmatch("%S+") do table.insert(args, word) end
@@ -156,7 +148,7 @@ local function execute_command(input)
             if not users[current_user].wheel then
                 print(cmd .. ": Permission denied (staff privileges required)")
             else
-                local file_to_edit = args[2] -- Вернул ваш индекс!
+                local file_to_edit = args[2]
                 if file_to_edit then shell.run("/rom/programs/edit.lua", file_to_edit)
                 else print("Error: Specify file name. Example: vim script.lua") end
             end
@@ -182,9 +174,7 @@ local function execute_command(input)
             elseif reserved[string.lower(name)] then
                 print("Error: '" .. name .. "' is a reserved built-in command and will never be reachable.")
             else
-                name = name:gsub("[/%.\\]", "") -- Защита от выхода из папки
-                
-                -- Убираем лишние слэши для стабильности ФС CraftOS
+                name = name:gsub("[/%.\\]", "")
                 local clean_dir = plugin_dir:gsub("^/", "")
                 local path = clean_dir .. name .. ".lua"
                 
@@ -244,7 +234,7 @@ local function execute_command(input)
 
         -- 6. CAT Command
         elseif cmd == "cat" then
-            local file_to_read = args[2] -- Вернул ваш индекс!
+            local file_to_read = args[2]
             if file_to_read then
                 -- Защита базы паролей от чтения не-root пользователями
                 local normalized = "/" .. file_to_read:gsub("^/", "")
@@ -328,7 +318,7 @@ local function execute_command(input)
                 if users[current_user].pass == sudo_pass then
                     local sudo_cmd_string = ""
                     for i = 2, #args do sudo_cmd_string = sudo_cmd_string .. args[i] .. " " end
-                    sudo_cmd_string = sudo_cmd_string:gsub("%s+$", "") -- убираем хвостовой пробел
+                    sudo_cmd_string = sudo_cmd_string:gsub("%s+$", "")
 
                     if sudo_cmd_string == "" then
                         print("Usage: sudo [command]")
@@ -362,18 +352,14 @@ local function execute_command(input)
                 local valid_sides = { back=true, front=true, top=true, bottom=true, left=true, right=true }
                 if valid_sides[side] then
                     if state == "on" then
-                        -- Лимиты длительности по правам доступа
-                        -- ВАЖНО: используем logged_in_user (реальный юзер), а не current_user,
-                        -- иначе wheel-юзер через "sudo rs ..." получает current_user == "root"
-                        -- и обходит свой 7-секундный лимит, получая бесконечный сигнал как root.
                         local is_root = (logged_in_user == "root")
                         local is_wheel = users[current_user].wheel
-                        local max_time -- nil = без ограничений
-                        local default_time -- время по умолчанию, если пользователь не указал своё
+                        local max_time
+                        local default_time
 
                         if is_root then
                             max_time = nil
-                            default_time = nil -- root: висит вечно, пока не off
+                            default_time = nil
                         elseif is_wheel then
                             max_time = 7
                             default_time = 7
@@ -683,8 +669,8 @@ local function execute_command(input)
                 local sub = args[2]
 
                 if sub == "clone" or sub == "pull" then
-                    local repo_arg = args[3] -- ожидаем формат owner/repo
-                    local remote_path = args[4] or "" -- путь внутри репо, по умолчанию корень
+                    local repo_arg = args[3]
+                    local remote_path = args[4] or ""
                     local local_dir = args[5]
 
                     if not repo_arg or not repo_arg:find("/") then
@@ -699,8 +685,6 @@ local function execute_command(input)
 
                             local file_count = 0
                             local headers = { ["User-Agent"] = "SourceOS-git" }
-
-                            -- Рекурсивно обходит дерево каталогов через GitHub Contents API
                             local function fetch_dir(api_path, disk_path)
                                 local api_url = "https://api.github.com/repos/" .. owner .. "/" .. repo .. "/contents/" .. api_path
                                 local response = http.get(api_url, headers)
@@ -779,16 +763,12 @@ local function execute_command(input)
         end
     end
 end
-
--- Вход в шелл после успешной авторизации
 linux_clear()
 if term.isColor() then term.setTextColor(colors.white) end
 print("Welcome to SourceOS!")
 print("Type 'help' to see available commands. Type 'exit' to log out.")
 print("---------------------------------------------------")
--- Главный цикл обработки команд (Event Loop)
 while running do
-    -- Отрисовка Linux-промпта (# для рута, $ для обычных пользователей)
     if term.isColor() then 
         term.setTextColor(colors.green)
         write(current_user .. "@" .. hostname)
@@ -803,7 +783,7 @@ while running do
     end
 
     local input = read()
-    if input == "" then input = " " end -- Защита от пустого ввода
+    if input == "" then input = " " end
 
     execute_command(input)
 end
