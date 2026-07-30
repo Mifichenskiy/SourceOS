@@ -1,0 +1,22 @@
+# SourceOS — sensitive/local data
+users.json
+shop_inventory.json
+sales_log.json
+
+# Plugins created locally during testing (remove this line if you want to track them)
+# plugins_source/
+
+# OS junk files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
